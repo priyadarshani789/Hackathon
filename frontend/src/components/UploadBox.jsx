@@ -5,6 +5,7 @@ export default function UploadBox({ onFilesUploaded }) {
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [error, setError] = useState(null);
   
   const handleDragOver = (e) => {
     e.preventDefault();
@@ -29,56 +30,90 @@ export default function UploadBox({ onFilesUploaded }) {
   };
   
   const handleFiles = (newFiles) => {
-    // Filter for valid file types
+    // Filter for valid file types (PDF and DOCX)
     const validFiles = newFiles.filter(file => {
-      const fileType = file.type;
-      return fileType.includes('pdf') || 
-             fileType.includes('word') || 
-             fileType.includes('text') ||
-             fileType.includes('document');
+      const fileName = file.name.toLowerCase();
+      return fileName.endsWith('.pdf') || fileName.endsWith('.docx');
     });
     
     setFiles(prev => [...prev, ...validFiles]);
+    setError(null);
   };
   
   const removeFile = (indexToRemove) => {
     setFiles(files.filter((_, index) => index !== indexToRemove));
   };
   
-  const uploadFiles = () => {
+  const uploadFiles = async () => {
     if (files.length === 0) return;
     
     setUploading(true);
-    // Simulate API call
-    setTimeout(() => {
+    setError(null);
+    
+    try {
+      // Process files one by one
+      const results = [];
+      
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const response = await fetch('/analyze-sop/', {
+          method: 'POST',
+          body: formData,
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to analyze ${file.name}`);
+        }
+        
+        const result = await response.json();
+        results.push({
+          filename: file.name,
+          ...result
+        });
+      }
+      
       setUploading(false);
       setUploadSuccess(true);
       
-      // Call the parent component's handler
+      // Call the parent component's handler with results
       if (onFilesUploaded) {
-        onFilesUploaded(files.length);
+        onFilesUploaded(results);
       }
       
       // Reset success state after showing animation
       setTimeout(() => {
         setFiles([]);
         setUploadSuccess(false);
-      }, 2000);
-    }, 2000);
+      }, 3000);
+      
+    } catch (err) {
+      setUploading(false);
+      setError(err.message);
+      console.error('Upload error:', err);
+    }
   };
 
   return (
-    <div className={`p-6 bg-white rounded-xl shadow-sm border w-full transition-all duration-300 ${uploadSuccess ? 'border-green-300 bg-green-50' : ''}`}>
+    <div className={`p-6 bg-white rounded-xl shadow-sm border w-full transition-all duration-300 ${uploadSuccess ? 'border-green-300 bg-green-50' : error ? 'border-red-300 bg-red-50' : ''}`}>
       <h2 className="text-lg font-semibold mb-2">Document Upload</h2>
       <p className="text-sm text-gray-500 mb-4">
         Upload your regulatory documents for GxP compliance validation.
-        Supported formats: PDF, Word, Text files.
+        Supported formats: PDF and DOCX files only.
       </p>
+
+      {error && (
+        <div className="mb-4 p-3 bg-red-100 border border-red-300 rounded-lg">
+          <p className="text-sm text-red-700">❌ {error}</p>
+        </div>
+      )}
 
       <div 
         className={`border-2 border-dashed rounded-lg p-10 flex flex-col items-center justify-center text-gray-500 cursor-pointer transition-all
           ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:bg-gray-50'}
-          ${uploadSuccess ? 'border-green-500 bg-green-50' : ''}`}
+          ${uploadSuccess ? 'border-green-500 bg-green-50' : ''}
+          ${error ? 'border-red-300' : ''}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -89,7 +124,7 @@ export default function UploadBox({ onFilesUploaded }) {
             <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
-            <p className="font-medium">Upload Successful!</p>
+            <p className="font-medium">Analysis Complete!</p>
           </div>
         ) : (
           <>
@@ -104,7 +139,7 @@ export default function UploadBox({ onFilesUploaded }) {
             </svg>
             <p className="text-sm font-medium">{isDragging ? 'Drop files here' : 'Drop files here or click to browse'}</p>
             <p className="text-xs text-gray-400 mt-1">
-              PDF, Word documents, and text files up to 10MB each
+              PDF and DOCX files up to 10MB each
             </p>
           </>
         )}
@@ -114,7 +149,7 @@ export default function UploadBox({ onFilesUploaded }) {
           multiple 
           className="hidden" 
           onChange={handleFileInput}
-          accept=".pdf,.doc,.docx,.txt" 
+          accept=".pdf,.docx" 
         />
       </div>
       
